@@ -1,0 +1,27 @@
+{
+  "name": "@vellumai/sms",
+  "displayName": "SMS",
+  "version": "0.0.1",
+  "private": true,
+  "description": "SMS channel for the Vellum assistant, backed by Twilio",
+  "icon": "message-square",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "sms",
+    "text",
+    "twilio",
+    "channel",
+    "comms"
+  ],
+  "peerDependencies": {
+    "@vellumai/plugin-api": "^0.10.3"
+  },
+  "dependencies": {
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.9",
+    "typescript": "5.9.3"
+  }
+}

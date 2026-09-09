@@ -1,0 +1,28 @@
+{
+  "routes": [
+    {
+      "path": "events-twilio",
+      "kind": "http",
+      "description": "Inbound SMS webhooks from a Twilio number (messaging deliveries).",
+      "verification": {
+        "kind": "twilio",
+        "secret": {
+          "field": "auth_token"
+        }
+      },
+      "inbound": {
+        "identity": "phone",
+        "fields": {
+          "content": "Body",
+          "conversationExternalId": "From",
+          "externalMessageId": "MessageSid",
+          "actorExternalId": "From",
+          "chatType": {
+            "from": "From",
+            "default": "sms"
+          }
+        }
+      }
+    }
+  ]
+}
