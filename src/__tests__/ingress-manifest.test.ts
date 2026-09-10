@@ -3,7 +3,7 @@
  *
  * A manifest that fails the gateway's schema fails closed — the route is not
  * served — so the shape here is not cosmetic. These tests pin the declaration
- * the gateway-side `twilio` verification kind and inbound reading expect.
+ * the gateway-side generic HMAC verifier and inbound reading expect.
  */
 
 import { readFileSync } from "node:fs";
@@ -17,10 +17,7 @@ const manifest = JSON.parse(
   routes: {
     path: string;
     kind: string;
-    verification?: {
-      kind: string;
-      secret: { field: string };
-    };
+    verification?: Record<string, unknown>;
     inbound?: {
       identity: string;
       fields: Record<string, unknown>;
@@ -36,11 +33,17 @@ describe("channels/ingress.json", () => {
     expect(route.kind).toBe("http");
   });
 
-  test("declares the twilio verification kind over the auth token", () => {
+  test("declares URL and form payloads under the generic HMAC verifier", () => {
     const route = manifest.routes[0]!;
     expect(route.verification).toEqual({
-      kind: "twilio",
+      kind: "hmac",
+      algorithm: "sha1",
       secret: { field: "auth_token" },
+      signature: {
+        header: "X-Twilio-Signature",
+        encoding: "base64",
+      },
+      payload: ["request-url", "form-params"],
     });
   });
 

@@ -50,11 +50,11 @@ entry.
 
 **Inbound is webhook-first.** Twilio POSTs each message to the number's
 `SmsUrl`, form-encoded, signed with `X-Twilio-Signature`. Verification is the
-gateway's job: `channels/ingress.json` declares the route with the `twilio`
-verification kind, and the handler never sees an unverified delivery. The
-signature is an HMAC-SHA1 over the full request URL plus the sorted form
-params, keyed by the account auth token — a scheme that does not fit the
-gateway's generic `hmac` kind, hence the dedicated one.
+gateway's job: `channels/ingress.json` declares the route with the generic
+`hmac` verification kind, and the handler never sees an unverified delivery.
+The signature is an HMAC-SHA1 over the full request URL plus the sorted form
+params, keyed by the account auth token. The manifest composes those values
+with the `request-url` and `form-params` payload parts.
 
 **Gating happens before the forward.** The gateway reads the sender and the
 chat out of the delivery's own form params (the `inbound` declaration names
