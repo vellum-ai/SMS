@@ -12,7 +12,7 @@
         "typescript": "5.9.3",
       },
       "peerDependencies": {
-        "@vellumai/plugin-api": "^0.10.3",
+        "@vellumai/plugin-api": "^0.11.10",
       },
     },
   },
@@ -21,7 +21,7 @@
 
     "@types/node": ["@types/node@26.5.0", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-dVSGpriSoCgz8WnDNTuSSuSv1PC/ALXihO4ulRZt7Md8k9mlbdin3lGOcDE8SnWOgf513ByWlXd7BK4azmyg/A=="],
 
-    "@vellumai/plugin-api": ["@vellumai/plugin-api@0.10.12", "", { "dependencies": { "zod": "4.3.6" } }, "sha512-RiXSPDz9LhHRx8p5hMHcMdHxzKhtNdPzxoAKOdD3GoEbXBe237lgt59Ez0cRKulGGhtFrTp/Y+DCXj0KMDwv5Q=="],
+    "@vellumai/plugin-api": ["@vellumai/plugin-api@0.11.10", "", { "dependencies": { "zod": "4.3.6" } }, "sha512-bsfBeB3E3R5zWeOJujv0+dzQ1tIUlAH/Ii9IjQ3SyCo39ZKK2iFuSYmeBc10OINFlRvaPxd8PT3GI4rXEb9uTw=="],
 
     "bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
 

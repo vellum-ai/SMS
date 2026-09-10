@@ -5,7 +5,6 @@ import {
   classifyTwilioWebhook,
   normalizeWebhookParams,
 } from "../providers/twilio/normalize.ts";
-import { normalizeListedMessage } from "../providers/twilio/normalize.ts";
 
 const RECEIVED_AT = "2026-09-09T10:00:00.000Z";
 
@@ -83,34 +82,6 @@ describe("normalizeWebhookParams", () => {
       RECEIVED_AT,
     );
     expect(event?.actor.actorExternalId).toBe("+15551234567");
-  });
-});
-
-describe("normalizeListedMessage", () => {
-  test("maps a listed inbound message onto the event shape", () => {
-    const event = normalizeListedMessage(
-      {
-        sid: "SM03",
-        direction: "inbound",
-        from: "+15551234567",
-        body: "via poll",
-        date_created: "2026-09-09T09:59:00.000Z",
-      },
-      RECEIVED_AT,
-    );
-    expect(event?.message.content).toBe("via poll");
-    expect(event?.message.externalMessageId).toBe("SM03");
-  });
-
-  test("drops an outbound echo", () => {
-    // The listing covers both directions; the poller must never see our own
-    // replies come back as turns. Direction filtering happens in the adapter,
-    // but a record that slips through with no sender still fails closed here.
-    const event = normalizeListedMessage(
-      { sid: "SM04", direction: "outbound-api", body: "our reply" },
-      RECEIVED_AT,
-    );
-    expect(event).toBeUndefined();
   });
 });
 

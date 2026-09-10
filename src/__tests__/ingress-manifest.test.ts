@@ -1,9 +1,8 @@
 /**
- * The ingress manifest, checked against what the gateway will actually parse.
+ * The ingress manifest, checked against what the gateway parses.
  *
- * A manifest that fails the gateway's schema fails closed — the route is not
- * served — so the shape here is not cosmetic. These tests pin the declaration
- * the gateway-side `twilio` verification kind and inbound reading expect.
+ * A manifest that fails the gateway schema fails closed, so this declaration is
+ * a security boundary rather than cosmetic metadata.
  */
 
 import { readFileSync } from "node:fs";
@@ -17,10 +16,7 @@ const manifest = JSON.parse(
   routes: {
     path: string;
     kind: string;
-    verification?: {
-      kind: string;
-      secret: { field: string };
-    };
+    verification?: unknown;
     inbound?: {
       identity: string;
       fields: Record<string, unknown>;
@@ -30,24 +26,25 @@ const manifest = JSON.parse(
 
 describe("channels/ingress.json", () => {
   test("declares exactly one http route", () => {
-    expect(manifest.routes.length).toBe(1);
-    const route = manifest.routes[0]!;
-    expect(route.path).toBe("events-twilio");
-    expect(route.kind).toBe("http");
+    expect(manifest.routes).toHaveLength(1);
+    expect(manifest.routes[0]?.path).toBe("events-twilio");
+    expect(manifest.routes[0]?.kind).toBe("http");
   });
 
-  test("declares the twilio verification kind over the auth token", () => {
-    const route = manifest.routes[0]!;
-    expect(route.verification).toEqual({
-      kind: "twilio",
+  test("declares Twilio signing with generic HMAC payload parts", () => {
+    expect(manifest.routes[0]?.verification).toEqual({
+      kind: "hmac",
+      algorithm: "sha1",
       secret: { field: "auth_token" },
+      signature: {
+        header: "X-Twilio-Signature",
+        encoding: "base64",
+      },
+      payload: ["request-url", "form-params"],
     });
   });
 
   test("declares inbound fields over the vendor's form params", () => {
-    // The gateway reads these off the delivery's own body — Twilio's flat
-    // form params — before it forwards anything, so the paths must be the
-    // vendor's parameter names, not the plugin's event shape.
     const fields = manifest.routes[0]!.inbound!.fields as Record<
       string,
       string | { from: string; default?: string }
@@ -56,12 +53,10 @@ describe("channels/ingress.json", () => {
     expect(fields.actorExternalId).toBe("From");
     expect(fields.conversationExternalId).toBe("From");
     expect(fields.externalMessageId).toBe("MessageSid");
-    // Every SMS event reads as sms: the sender id is spoofable and the
-    // gateway classifies on that.
     expect(fields.chatType).toEqual({ from: "From", default: "sms" });
   });
 
-  test("declares phone identity so +1 (202) 555-0142 and +12025550142 match", () => {
+  test("declares phone identity so formatted and E.164 values match", () => {
     expect(manifest.routes[0]!.inbound!.identity).toBe("phone");
   });
 });
