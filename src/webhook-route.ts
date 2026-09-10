@@ -78,19 +78,14 @@ export async function handleTwilioWebhook(
   durablePath?: string,
 ): Promise<Response> {
   const config = resolveWebhookConfig(durablePath);
-  if (config.ingressMode !== "webhook") {
-    // An approved-but-unused declaration should not be a live surface.
-    return json(404, { error: "webhook ingress is not enabled" });
-  }
-
   const params = await parseFormParams(request);
   if (!params) {
     return json(200, { ok: true, ignored: "unparsable body" });
   }
 
-  // Built for this route rather than read from plugin state. The mode check
-  // above guarantees a webhook-mode config, and building from scratch keeps
-  // the handler correct on its own terms rather than by coincidence.
+  // Built for this route rather than read from plugin state. Building from
+  // scratch keeps the handler correct on its own terms rather than by
+  // coincidence.
   const provider = resolveProvider({ config });
 
   const delivery = provider.classifyWebhook(params, new Date().toISOString());

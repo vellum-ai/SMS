@@ -19,10 +19,9 @@ import {
   resolveFromNumber,
 } from "../../config.ts";
 import { describeApiFailure, describeError } from "../error-detail.ts";
-import type { TwilioIncomingPhoneNumber, TwilioMessage } from "./schemas.ts";
+import type { TwilioIncomingPhoneNumber } from "./schemas.ts";
 import {
   TwilioIncomingPhoneNumberListSchema,
-  TwilioMessageListSchema,
   TwilioSendResponseSchema,
 } from "./schemas.ts";
 
@@ -95,21 +94,6 @@ export class TwilioClient {
       form,
     });
     return TwilioSendResponseSchema.safeParse(raw).data?.sid;
-  }
-
-  /**
-   * `GET /Messages.json`, newest first, filtered client-side.
-   *
-   * Twilio's documented filters (`To`, `From`, `DateCreated>`) are date-granular
-   * at best, so the cursor bound is applied by the caller over the returned
-   * page rather than trusted to the API. `limit` caps how far back the page
-   * reaches.
-   */
-  async listMessages(limit: number): Promise<TwilioMessage[]> {
-    const form = new URLSearchParams({ PageSize: String(limit) });
-    const raw = await this.request("/Messages.json", { method: "GET", form });
-    const parsed = TwilioMessageListSchema.safeParse(raw);
-    return parsed.success ? parsed.data.messages : [];
   }
 
   /** `GET /IncomingPhoneNumbers.json`. */

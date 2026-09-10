@@ -64,9 +64,8 @@ the credentials are stored and the assistant is reachable (a public
 step. A credential save is enough: the restart that follows it programs the
 number.
 
-If the assistant has no public URL, inbound cannot arrive — switch
-`ingressMode` to `poll` in the settings app to at least see messages, and
-note that poll mode cannot start turns.
+If the assistant has no public URL, inbound SMS cannot arrive until a public
+ingress URL is available.
 
 The settings app reports the last registration attempt, including which step
 failed. "no webhook could be registered" with a URL reason means the

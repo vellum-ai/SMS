@@ -5,10 +5,16 @@
       "kind": "http",
       "description": "Inbound SMS webhooks from a Twilio number (messaging deliveries).",
       "verification": {
-        "kind": "twilio",
+        "kind": "hmac",
+        "algorithm": "sha1",
         "secret": {
           "field": "auth_token"
-        }
+        },
+        "signature": {
+          "header": "X-Twilio-Signature",
+          "encoding": "base64"
+        },
+        "payload": ["request-url", "form-params"]
       },
       "inbound": {
         "identity": "phone",
