@@ -1,41 +1,19 @@
 /**
  * SMS settings app.
  *
- * A compiled React app served in the workspace panel. The host build maps
- * `react` / `react-dom` onto `preact/compat`, so this is ordinary React. It
- * talks to the plugin's routes under `/x/plugins/sms/`.
- *
- * One job: get the channel onto a line that can actually send. That means
- * filling in the Twilio credentials — the step that was previously only
- * possible from a terminal — and picking how inbound arrives.
- *
- * The shape follows the assistant's own BYO-service forms and the iMessage
- * plugin's settings app: title and subtitle, the provider's key fields, a
- * "where do I get this" callout, and a right-aligned Save that only lights up
- * when something changed.
- *
- * It cannot import the design library — this runs sandboxed, with no access
- * to the host's stylesheet or its CSS custom properties — so the styling below
- * reproduces the same structure against system colors.
- *
- * Requests go through `api.ts`, which reaches the routes over the host bridge
- * — never the global `fetch`, which cannot escape the sandbox.
+ * A compiled React app served in the workspace panel. Requests go through the
+ * host bridge in `api.ts`, never the bare global `fetch`.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { apiRequest, messageOf } from "./api.ts";
 
 const BASE = "/x/plugins/sms";
 
-/**
- * Display copy for the one provider. Which providers exist comes from the
- * plugin; this only says how to describe them.
- */
 const PROVIDER_CATALOG = {
   id: "twilio",
-  displayName: "Twilio",
   subtitle:
     "Your own Twilio account and number. One auth token covers sending, receiving, and webhook signing.",
   credentialsGuide: {
@@ -45,30 +23,6 @@ const PROVIDER_CATALOG = {
     linkLabel: "Open Twilio Console",
   },
 } as const;
-
-/**
- * Display copy for each ingress mode. Which ones exist comes from the plugin,
- * the same way the provider list does; this only says how to describe them.
- *
- * `pollIntervalMs` is deliberately absent. It is bounded in the config schema,
- * its default is right for Twilio's rate limits, and someone who genuinely
- * needs to tune it can edit `config.json`, which is a better trade than a
- * number input that mostly invites people to set it to 500.
- */
-const INGRESS_MODE_CATALOG = [
-  {
-    id: "webhook",
-    label: "Webhook",
-    note: "Twilio delivers each message as it arrives. Needs a public ingress URL the assistant can be reached on.",
-  },
-  {
-    id: "poll",
-    label: "Polling",
-    note: "The plugin checks for new messages on a timer. Works where nothing can reach this assistant, but cannot start turns.",
-  },
-] as const;
-
-type IngressMode = (typeof INGRESS_MODE_CATALOG)[number]["id"];
 
 const STYLES = `
   :root { color-scheme: light dark; }
@@ -154,7 +108,6 @@ const STYLES = `
     border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px;
     overflow-wrap: anywhere;
   }
-  .banner.warn { background: color-mix(in srgb, Mark 40%, transparent); }
   .banner.err {
     background: color-mix(in srgb, Canvas 82%, red);
     color: color-mix(in srgb, CanvasText 35%, red);
@@ -163,7 +116,6 @@ const STYLES = `
   .banner.info { background: color-mix(in srgb, CanvasText 8%, transparent); }
 `;
 
-/** One credential the provider needs, and whether the store already has it. */
 interface CredentialField {
   field: string;
   label: string;
@@ -173,27 +125,19 @@ interface CredentialField {
 }
 
 type Credentials = Record<string, CredentialField[]>;
-
-/** What `startChannelRuntime` did, as the routes report it. */
 type ChannelStatus = "running" | "idle";
 
-/** What the plugin's last webhook registration attempt did, if any. */
 interface WebhookReport {
   provider: string;
   outcome: "registered" | "already-registered" | "skipped" | "failed";
   url?: string;
-  /** How far it got. Absent on a plugin older than the step being recorded. */
-  step?: "read-secret" | "resolve-url" | "call-provider" | "store-secret";
+  step?: "resolve-url" | "call-provider";
   reason?: string;
   at: string;
 }
 
 interface Settings {
-  config: { provider: string; ingressMode: IngressMode };
-  providers: string[];
-  ingressModes: string[];
   activeProvider: string | null;
-  /** Every provider's fields, keyed by provider id. */
   credentials: Credentials;
   webhook: WebhookReport | null;
 }
@@ -201,52 +145,29 @@ interface Settings {
 interface ChannelResult {
   status?: ChannelStatus | null;
   idleReason?: string | null;
-  credentials?: Credentials;
 }
 
 interface Notice {
-  tone: "info" | "warn" | "err";
+  tone: "info" | "err";
   text: string;
 }
 
-/**
- * Turn a channel result into something worth reading.
- *
- * Two states, and only one of them is worth alarming about. A save used to be
- * able to come back "it takes effect the next time the assistant loads this
- * plugin", which was true and useless: the switch had already happened, and
- * the sentence read as a warning about something the user then could not act
- * on. The runtime no longer reports that state.
- */
 function noticeFor(result: ChannelResult, what: string): Notice {
-  switch (result.status) {
-    case "running":
-      return { tone: "info", text: `${what} The channel is running.` };
-    case "idle":
-      return {
-        tone: "err",
-        text: `${what} The channel is not running: ${
-          result.idleReason ?? "no reason given"
-        }`,
-      };
-    default:
-      return { tone: "info", text: what };
+  if (result.status === "idle") {
+    return {
+      tone: "err",
+      text: `${what} The channel is not running: ${
+        result.idleReason ?? "no reason given"
+      }`,
+    };
   }
+  return {
+    tone: "info",
+    text: result.status === "running" ? `${what} The channel is running.` : what,
+  };
 }
 
-/**
- * One line about the last registration attempt, or nothing.
- *
- * Only shown in webhook mode, where it is the difference between "inbound is
- * set up" and "inbound is silent and you cannot see why". A failure or a skip
- * carries the reason, since that is what says whether the fix is a credential,
- * a public URL, or nothing you control.
- */
-function describeWebhook(
-  report: WebhookReport | null,
-  ingressMode: IngressMode | null,
-): string | null {
-  if (ingressMode !== "webhook") return null;
+function describeWebhook(report: WebhookReport | null): string {
   if (!report) {
     return "No webhook registration has been attempted since this plugin loaded.";
   }
@@ -261,8 +182,6 @@ function describeWebhook(
       return `Webhook registration failed${
         report.step ? ` (${report.step})` : ""
       }: ${report.reason ?? "no reason given"}`;
-    default:
-      return null;
   }
 }
 
@@ -303,7 +222,6 @@ function ExternalLinkIcon(): React.ReactElement {
 
 function App(): React.ReactElement {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [draftIngress, setDraftIngress] = useState<IngressMode | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -311,14 +229,8 @@ function App(): React.ReactElement {
 
   const load = useCallback(async () => {
     try {
-      const next = await apiRequest<Settings>(
-        "Loading settings",
-        `${BASE}/settings`,
-      );
+      const next = await apiRequest<Settings>("Loading settings", `${BASE}/settings`);
       setSettings(next);
-      // Follow the configured value unless a draft is already on screen: a
-      // reload must not silently move the panel off what the user is editing.
-      setDraftIngress((current) => current ?? next.config.ingressMode);
       setError(null);
     } catch (err) {
       setError(messageOf(err));
@@ -329,26 +241,14 @@ function App(): React.ReactElement {
     void load();
   }, [load]);
 
-  const serverIngress = settings?.config.ingressMode ?? null;
-
-  /** Ingress modes the plugin offers, in catalog order. */
-  const ingressOptions = useMemo(
-    () =>
-      INGRESS_MODE_CATALOG.filter((mode) =>
-        (settings?.ingressModes ?? []).includes(mode.id),
-      ),
-    [settings],
-  );
-
   const fields: CredentialField[] =
     settings?.credentials[PROVIDER_CATALOG.id] ?? [];
 
   const save = useCallback(async () => {
-    if (!draftIngress || !settings) return;
+    if (!settings) return;
     setSaving(true);
     setError(null);
 
-    // Only fields belonging to the provider on screen.
     const values = Object.fromEntries(
       fields
         .map((spec): [string, string] => [spec.field, drafts[spec.field] ?? ""])
@@ -356,56 +256,29 @@ function App(): React.ReactElement {
     );
 
     try {
-      let result: ChannelResult = {};
-      let what = "Saved.";
-
-      // Credentials first, then an ingress-only PATCH if the mode changed.
-      // The credentials route starts the channel before it answers, so a
-      // token that cannot resolve fails the save instead of committing a
-      // channel the line cannot use — and the restart that follows the save
-      // is what programs the number's webhook.
-      if (Object.keys(values).length > 0) {
-        result = await apiRequest<ChannelResult>(
-          "Saving credentials",
-          `${BASE}/credentials`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              provider: PROVIDER_CATALOG.id,
-              values,
-            }),
-          },
-        );
-      }
-
-      if (draftIngress !== settings.config.ingressMode) {
-        result = await apiRequest<ChannelResult>(
-          "Saving ingress mode",
-          `${BASE}/settings`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ ingressMode: draftIngress }),
-          },
-        );
-      }
-
+      const result = await apiRequest<ChannelResult>(
+        "Saving credentials",
+        `${BASE}/credentials`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ provider: PROVIDER_CATALOG.id, values }),
+        },
+      );
       setDrafts({});
-      setNotice(noticeFor(result, what));
+      setNotice(noticeFor(result, "Saved."));
       await load();
     } catch (err) {
       setError(messageOf(err));
     } finally {
       setSaving(false);
     }
-  }, [draftIngress, drafts, fields, load, settings]);
+  }, [drafts, fields, load, settings]);
 
   const reset = useCallback(() => {
     setDrafts({});
-    setDraftIngress(serverIngress);
     setNotice(null);
-  }, [serverIngress]);
+  }, []);
 
   if (error && !settings) {
     return (
@@ -416,7 +289,7 @@ function App(): React.ReactElement {
     );
   }
 
-  if (!settings || !draftIngress) {
+  if (!settings) {
     return (
       <div className="app">
         <style>{STYLES}</style>
@@ -428,9 +301,7 @@ function App(): React.ReactElement {
   const typed = fields.some(
     (spec) => (drafts[spec.field] ?? "").trim().length > 0,
   );
-  const hasChanges = draftIngress !== serverIngress || typed;
-  const ingress = ingressOptions.find((mode) => mode.id === draftIngress);
-  const webhookNote = describeWebhook(settings.webhook, serverIngress);
+  const webhookNote = describeWebhook(settings.webhook);
 
   return (
     <div className="app">
@@ -438,20 +309,15 @@ function App(): React.ReactElement {
       <section className="card">
         <h1>SMS</h1>
         <p className="subtitle">
-          People reach the assistant by texting a line it listens on.
+          People reach the assistant by texting a Twilio line it listens on.
         </p>
         <hr className="divider" />
 
         {error ? <div className="banner err">{error}</div> : null}
-        {notice ? (
-          <div className={`banner ${notice.tone}`}>{notice.text}</div>
-        ) : null}
+        {notice ? <div className={`banner ${notice.tone}`}>{notice.text}</div> : null}
         <div className="stack">
           <div className="field">
             <label>Provider</label>
-            {/* Not a control: Twilio is the only implementation, so a dropdown
-                with one entry would be a control pretending to offer a
-                choice. */}
             <p className="note">{PROVIDER_CATALOG.subtitle}</p>
           </div>
 
@@ -460,9 +326,6 @@ function App(): React.ReactElement {
               <label htmlFor={spec.field}>{spec.label}</label>
               <input
                 id={spec.field}
-                // A stored value is never sent back to the app, so the input
-                // starts empty whether or not one exists. The placeholder is
-                // what tells the two apart.
                 type={spec.secret ? "password" : "text"}
                 autoComplete="off"
                 spellCheck={false}
@@ -499,47 +362,28 @@ function App(): React.ReactElement {
           </div>
 
           <div className="field">
-            <label htmlFor="ingressMode">Inbound messages</label>
-            <select
-              id="ingressMode"
-              value={draftIngress}
-              disabled={saving}
-              onChange={(event) =>
-                setDraftIngress(event.target.value as IngressMode)
-              }
-            >
-              {ingressOptions.map((mode) => (
-                <option key={mode.id} value={mode.id}>
-                  {mode.label}
-                </option>
-              ))}
-            </select>
-            {ingress ? <p className="note">{ingress.note}</p> : null}
-            {webhookNote ? (
-              settings.webhook?.outcome === "failed" ? (
-                <div className="banner err">{webhookNote}</div>
-              ) : (
-                <p className="note">{webhookNote}</p>
-              )
-            ) : null}
+            <label>Inbound messages</label>
+            <p className="note">
+              Twilio delivers inbound messages to this plugin over a webhook.
+              The assistant must have a public ingress URL.
+            </p>
+            {settings.webhook?.outcome === "failed" ? (
+              <div className="banner err">{webhookNote}</div>
+            ) : (
+              <p className="note">{webhookNote}</p>
+            )}
           </div>
 
           <div className="actions">
             <button
               type="button"
               className="save"
-              disabled={!hasChanges || saving}
+              disabled={!typed || saving}
               onClick={() => void save()}
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {/*
-              The assistant's own forms use Reset to delete a stored key. The
-              plugin API has no way to remove a credential — only to set one —
-              so this reverts the form to what is saved rather than pretending
-              to clear the store.
-            */}
-            {hasChanges ? (
+            {typed ? (
               <button
                 type="button"
                 className="reset"

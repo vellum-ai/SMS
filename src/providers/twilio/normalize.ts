@@ -14,7 +14,7 @@
  * classifies on that distinction.
  */
 
-import type { TwilioMessage, TwilioWebhookParams } from "./schemas.ts";
+import type { TwilioWebhookParams } from "./schemas.ts";
 import {
   nonMessageLabel,
   TwilioWebhookParamsSchema,
@@ -30,14 +30,7 @@ export function chatTypeForMessage(): "sms" {
   return "sms";
 }
 
-/**
- * Normalize one inbound Twilio message.
- *
- * Webhook params and polled message resources both land here, because the
- * fields that matter to a turn (`From`, `Body`, the sid) have the same
- * meaning in both shapes and the differences (JSON casing versus form keys)
- * are resolved by the two thin extractors below.
- */
+/** Normalize one inbound Twilio webhook message. */
 function normalizeFields(input: {
   sid: string;
   from: string | undefined;
@@ -95,20 +88,6 @@ export function normalizeWebhookParams(
     body: params.Body,
     receivedAt,
     raw: params as Record<string, unknown>,
-  });
-}
-
-/** Normalize one message from the Messages list API (poll mode). */
-export function normalizeListedMessage(
-  message: TwilioMessage,
-  receivedAt: string,
-): PluginInboundEvent | undefined {
-  return normalizeFields({
-    sid: message.sid,
-    from: message.from,
-    body: message.body,
-    receivedAt,
-    raw: message as unknown as Record<string, unknown>,
   });
 }
 

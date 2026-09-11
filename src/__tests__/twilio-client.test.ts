@@ -71,19 +71,6 @@ describe("TwilioClient", () => {
     );
   });
 
-  test("lists messages with the page size as a query param", async () => {
-    responder = () =>
-      new Response(JSON.stringify({ messages: [{ sid: "SM2" }] }), {
-        status: 200,
-      });
-    const client = new TwilioClient();
-    const messages = await client.listMessages(50);
-
-    expect(messages.map((m) => m.sid)).toEqual(["SM2"]);
-    expect(calls[0]?.url).toContain("PageSize=50");
-    expect(calls[0]?.init.method).toBe("GET");
-  });
-
   test("sets the number's SMS webhook form-encoded", async () => {
     responder = () => new Response("{}", { status: 200 });
     const client = new TwilioClient();

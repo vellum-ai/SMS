@@ -51,7 +51,7 @@ const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   durable = join(mkdtempSync(join(tmpdir(), "sms-webhook-")), "config.json");
-  writeFileSync(durable, JSON.stringify({ ingressMode: "webhook" }));
+  writeFileSync(durable, JSON.stringify({}));
   resetSharedState();
   globalThis.fetch = (async () => sendOk()) as unknown as typeof fetch;
 });
@@ -62,15 +62,6 @@ afterEach(() => {
 });
 
 describe("handleTwilioWebhook", () => {
-  test("404s when webhook ingress is not enabled", async () => {
-    writeFileSync(durable, JSON.stringify({ ingressMode: "poll" }));
-    const response = await handleTwilioWebhook(
-      postForm({ MessageSid: "SM01", From: "+15551234567", Body: "hi" }),
-      durable,
-    );
-    expect(response.status).toBe(404);
-  });
-
   test("answers 200-ignore on a status callback without running a turn", async () => {
     const response = await handleTwilioWebhook(
       postForm({
@@ -155,7 +146,6 @@ describe("handleTwilioWebhook", () => {
 describe("resolveWebhookConfig", () => {
   test("reads config.json when this module instance never saw init", () => {
     const config = resolveWebhookConfig(durable);
-    expect(config.ingressMode).toBe("webhook");
-    expect(config.provider).toBe("twilio");
+    expect(config).toEqual({ provider: "twilio" });
   });
 });

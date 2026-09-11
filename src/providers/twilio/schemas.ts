@@ -44,23 +44,6 @@ export function nonMessageLabel(params: TwilioWebhookParams): string {
   return "delivery without a body";
 }
 
-/** One message from `GET /Messages.json`. */
-export const TwilioMessageSchema = z.object({
-  sid: z.string(),
-  direction: z.enum(["inbound", "outbound-api", "outbound-call", "outbound-reply"]).optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  body: z.string().optional(),
-  date_created: z.string().optional(),
-});
-
-export type TwilioMessage = z.infer<typeof TwilioMessageSchema>;
-
-/** The listing envelope. `messages` is absent rather than empty on some errors. */
-export const TwilioMessageListSchema = z.object({
-  messages: z.array(TwilioMessageSchema).default([]),
-});
-
 /** One entry from `GET /IncomingPhoneNumbers.json`. */
 export const TwilioIncomingPhoneNumberSchema = z.object({
   sid: z.string(),
