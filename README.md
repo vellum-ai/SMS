@@ -17,8 +17,10 @@ threads. Inbound arrives only on the configured Twilio line.
 
 1. Create or sign in to a [Twilio account](https://www.twilio.com).
 2. Buy or choose an SMS-capable Twilio number.
-3. Copy the Account SID, Auth Token, and that number.
-4. Open the SMS settings app and save those three values.
+3. Find the Account SID, Auth Token, and that number in the Twilio Console.
+4. Ask the assistant to set up SMS. It opens a masked credential prompt for
+each value and stores it securely. Do not paste the values into chat or run a
+terminal command yourself.
 
 When the assistant has a public ingress URL, the plugin programs the number's
 SMS webhook automatically. If there is no public ingress URL, inbound SMS
@@ -26,14 +28,6 @@ cannot arrive until one is available.
 
 For Twilio's account, number, and messaging setup, see [Send SMS and MMS
 messages](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages).
-
-The same values can be stored from a terminal:
-
-```bash
-assistant credentials set --service sms --field account_sid <sid>
-assistant credentials set --service sms --field auth_token <token>
-assistant credentials set --service sms --field from_number <number>
-```
 
 The auth token is also the webhook signing key.
 
