@@ -5,7 +5,7 @@
  * provider seam imports from this directory.
  */
 
-import { resolveAccountSid, resolveAuthToken, resolveFromNumber } from "../../config.ts";
+import { resolveAccountSid, resolveAuthToken } from "../../config.ts";
 import type {
   EnsureWebhookOptions,
   MessagingProvider,
@@ -30,7 +30,9 @@ function normalizeDigits(value: string): string {
   return `+${value.replace(/\D/g, "")}`;
 }
 
-export function createTwilioProvider(): MessagingProvider {
+export function createTwilioProvider(
+  getFromNumber: () => string | undefined,
+): MessagingProvider {
   const client = new TwilioClient();
 
   return {
@@ -41,7 +43,11 @@ export function createTwilioProvider(): MessagingProvider {
       try {
         await resolveAccountSid();
         await resolveAuthToken();
-        await resolveFromNumber();
+        if (!getFromNumber()) {
+          throw new Error(
+            "The assistant SMS number is not selected. Finish SMS setup to choose a Twilio number.",
+          );
+        }
         return { ready: true as const };
       } catch (err) {
         return {
@@ -54,7 +60,12 @@ export function createTwilioProvider(): MessagingProvider {
     async ensureWebhook(
       opts: EnsureWebhookOptions,
     ): Promise<WebhookRegistration> {
-      const fromNumber = await resolveFromNumber();
+      const fromNumber = getFromNumber();
+      if (!fromNumber) {
+        throw new Error(
+          "The assistant SMS number is not selected. Finish SMS setup to choose a Twilio number.",
+        );
+      }
       const numbers = await client.listIncomingPhoneNumbers();
       const line = numbers.find((number) => numberMatches(number, fromNumber));
 
@@ -82,7 +93,13 @@ export function createTwilioProvider(): MessagingProvider {
           "Twilio sends are addressed by phone number; a conversation id cannot be delivered",
         );
       }
-      const sid = await client.sendMessage(target.to, body);
+      const fromNumber = getFromNumber();
+      if (!fromNumber) {
+        throw new Error(
+          "The assistant SMS number is not selected. Finish SMS setup to choose a Twilio number.",
+        );
+      }
+      const sid = await client.sendMessage(target.to, body, fromNumber);
       return { id: sid };
     },
 

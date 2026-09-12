@@ -15,7 +15,6 @@
 export const credentialValues: Record<string, string> = {
   "sms/account_sid": "AC0123456789",
   "sms/auth_token": "tok-1",
-  "sms/from_number": "+15559998888",
 };
 
 /** The turns `runConversationTurn` was called with. */

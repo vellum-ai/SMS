@@ -44,16 +44,45 @@ export function nonMessageLabel(params: TwilioWebhookParams): string {
   return "delivery without a body";
 }
 
+/** One message from `GET /Messages.json`. */
+export const TwilioMessageSchema = z.object({
+  sid: z.string(),
+  direction: z
+    .enum(["inbound", "outbound-api", "outbound-call", "outbound-reply"])
+    .optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  body: z.string().optional(),
+  date_created: z.string().optional(),
+});
+
+export type TwilioMessage = z.infer<typeof TwilioMessageSchema>;
+
+export const TwilioMessageListSchema = z.object({
+  messages: z.array(TwilioMessageSchema).default([]),
+});
+
+/** Shared SMS/voice/MMS capability block on number resources. */
+const TwilioPhoneNumberCapabilitiesSchema = z
+  .object({
+    sms: z.boolean().optional(),
+    SMS: z.boolean().optional(),
+  })
+  .passthrough()
+  .transform((capabilities) => ({
+    ...capabilities,
+    sms: capabilities.sms ?? capabilities.SMS,
+  }))
+  .optional();
+
 /** One entry from `GET /IncomingPhoneNumbers.json`. */
 export const TwilioIncomingPhoneNumberSchema = z.object({
   sid: z.string(),
   phone_number: z.string().optional(),
+  friendly_name: z.string().optional(),
   sms_url: z.string().optional(),
   sms_method: z.string().optional(),
-  capabilities: z
-    .object({ sms: z.boolean().optional() })
-    .passthrough()
-    .optional(),
+  capabilities: TwilioPhoneNumberCapabilitiesSchema,
 });
 
 export type TwilioIncomingPhoneNumber = z.infer<
@@ -63,6 +92,36 @@ export type TwilioIncomingPhoneNumber = z.infer<
 export const TwilioIncomingPhoneNumberListSchema = z.object({
   incoming_phone_numbers: z
     .array(TwilioIncomingPhoneNumberSchema)
+    .default([]),
+});
+
+/** A provisioned IncomingPhoneNumber response has the same resource shape. */
+export const TwilioIncomingPhoneNumberResponseSchema =
+  TwilioIncomingPhoneNumberSchema;
+
+/** One SMS-capable candidate from Twilio's available-number inventory. */
+export const TwilioAvailablePhoneNumberSchema = z.object({
+  phone_number: z.string(),
+  friendly_name: z.string().optional(),
+  locality: z.string().optional(),
+  region: z.string().optional(),
+  iso_country: z.string().optional(),
+  address_requirements: z.string().optional(),
+  capabilities: TwilioPhoneNumberCapabilitiesSchema,
+});
+
+export type TwilioAvailablePhoneNumber = z.infer<
+  typeof TwilioAvailablePhoneNumberSchema
+>;
+
+/** Country-level available-number API response. */
+export const TwilioAvailablePhoneNumberCountrySchema = z.object({
+  subresource_uris: z.record(z.string(), z.string()).default({}),
+});
+
+export const TwilioAvailablePhoneNumberListSchema = z.object({
+  available_phone_numbers: z
+    .array(TwilioAvailablePhoneNumberSchema)
     .default([]),
 });
 

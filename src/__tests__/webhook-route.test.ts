@@ -10,6 +10,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CHANNEL_ID } from "../plugin-paths.ts";
+
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import {
@@ -51,7 +53,7 @@ const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   durable = join(mkdtempSync(join(tmpdir(), "sms-webhook-")), "config.json");
-  writeFileSync(durable, JSON.stringify({}));
+  writeFileSync(durable, JSON.stringify({ fromNumber: "+15559998888" }));
   resetSharedState();
   globalThis.fetch = (async () => sendOk()) as unknown as typeof fetch;
 });
@@ -117,8 +119,8 @@ describe("handleTwilioWebhook", () => {
     expect(turns.length).toBe(1);
     const channel = (turns[0] as { channel: Record<string, string> }).channel;
     expect(channel.sourceChannel).toBe("plugin");
-    expect(channel.externalChatId).toBe("sms:+15551234567");
-    expect(channel.externalUserId).toBe("sms:+15551234567");
+    expect(channel.externalChatId).toBe(`${CHANNEL_ID}:+15551234567`);
+    expect(channel.externalUserId).toBe(`${CHANNEL_ID}:+15551234567`);
 
     // And the answer went back out over the same line.
     expect(calls.length).toBe(1);
@@ -146,6 +148,6 @@ describe("handleTwilioWebhook", () => {
 describe("resolveWebhookConfig", () => {
   test("reads config.json when this module instance never saw init", () => {
     const config = resolveWebhookConfig(durable);
-    expect(config).toEqual({ provider: "twilio" });
+    expect(config).toEqual({ provider: "twilio", fromNumber: "+15559998888" });
   });
 });

@@ -58,7 +58,7 @@ function postsToNumber(): number {
 
 describe("ensureWebhook", () => {
   test("programs the number when the URL differs", async () => {
-    const provider = createTwilioProvider();
+    const provider = createTwilioProvider(() => "+15559998888");
     const result = await provider.ensureWebhook({
       url: "https://assistant.example.test/webhooks/plugins/sms/events-twilio/",
       hasSecret: true,
@@ -81,7 +81,7 @@ describe("ensureWebhook", () => {
         { sid: "PN1", phone_number: "+15559998888", sms_url: "" },
       ],
     };
-    const provider = createTwilioProvider();
+    const provider = createTwilioProvider(() => "+15559998888");
     const result = await provider.ensureWebhook({
       url: "https://assistant.example.test/hook/",
       hasSecret: true,
@@ -102,7 +102,7 @@ describe("ensureWebhook", () => {
         },
       ],
     };
-    const provider = createTwilioProvider();
+    const provider = createTwilioProvider(() => "+15559998888");
     const result = await provider.ensureWebhook({
       url: "https://assistant.example.test/hook/",
       hasSecret: true,
@@ -114,7 +114,7 @@ describe("ensureWebhook", () => {
 
   test("fails loudly when the configured number is not on the account", async () => {
     numbersPayload = { incoming_phone_numbers: [] };
-    const provider = createTwilioProvider();
+    const provider = createTwilioProvider(() => "+15559998888");
     await expect(
       provider.ensureWebhook({
         url: "https://assistant.example.test/hook/",
@@ -126,7 +126,7 @@ describe("ensureWebhook", () => {
 
 describe("send", () => {
   test("refuses a conversation-id target rather than guessing", async () => {
-    const provider = createTwilioProvider();
+    const provider = createTwilioProvider(() => "+15559998888");
     await expect(
       provider.send({ conversationId: "CH123" }, "hi", {
         idempotencyKey: "k",

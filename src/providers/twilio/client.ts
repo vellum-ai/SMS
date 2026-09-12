@@ -2,26 +2,31 @@
  * Twilio REST API client.
  *
  * Thin wrapper over `https://api.twilio.com/2010-04-01/Accounts/{AccountSid}`
- * with HTTP Basic auth (AccountSid:AuthToken), the retry behavior Twilio's
- * own SDKs use for 429s, and tolerant response parsing through `schemas.ts`.
+ * with HTTP Basic auth, retry behavior for 429s and 5xx responses, and
+ * tolerant response parsing through `schemas.ts`.
  *
- * Everything is form-encoded rather than JSON: Twilio's API accepts JSON on
- * some endpoints, but the forms are the documented, universally accepted
- * spelling, and the messaging webhook is form-encoded on the wire either way.
- *
- * Credentials are resolved per request rather than cached, so a rotated token
- * takes effect without a restart.
+ * The Account SID and Auth Token are credentials. The selected assistant SMS
+ * line is a non-secret config value, read only when sending a message. That
+ * separation lets setup inspect and purchase account numbers before a line has
+ * been selected.
  */
 
 import {
   resolveAccountSid,
   resolveAuthToken,
-  resolveFromNumber,
 } from "../../config.ts";
 import { describeApiFailure, describeError } from "../error-detail.ts";
-import type { TwilioIncomingPhoneNumber } from "./schemas.ts";
+import type {
+  TwilioAvailablePhoneNumber,
+  TwilioIncomingPhoneNumber,
+  TwilioMessage,
+} from "./schemas.ts";
 import {
+  TwilioAvailablePhoneNumberCountrySchema,
+  TwilioAvailablePhoneNumberListSchema,
   TwilioIncomingPhoneNumberListSchema,
+  TwilioIncomingPhoneNumberResponseSchema,
+  TwilioMessageListSchema,
   TwilioSendResponseSchema,
 } from "./schemas.ts";
 
@@ -32,8 +37,9 @@ export const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01/Accounts";
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
 
-/** Page size for listings. Generous; listings are cheap and rate-limited lightly. */
+/** Page size for account listings and available-number suggestions. */
 const LIST_PAGE_SIZE = 100;
+const AVAILABLE_NUMBER_PAGE_SIZE = 10;
 
 export class TwilioApiError extends Error {
   constructor(
@@ -51,49 +57,53 @@ export class TwilioApiError extends Error {
   }
 }
 
-/** The line this plugin sends from, and whose webhook it programs. */
-export async function resolveLine(): Promise<{
+/** The credentials required to talk to the user's Twilio account. */
+export async function resolveTwilioCredentials(): Promise<{
   accountSid: string;
   authToken: string;
-  fromNumber: string;
 }> {
-  const [accountSid, authToken, fromNumber] = await Promise.all([
+  const [accountSid, authToken] = await Promise.all([
     resolveAccountSid(),
     resolveAuthToken(),
-    resolveFromNumber(),
   ]);
-  return { accountSid, authToken, fromNumber };
+  return { accountSid, authToken };
+}
+
+export type AvailablePhoneNumberType = "local" | "toll_free" | "mobile";
+
+export interface SearchAvailablePhoneNumbersOptions {
+  /** ISO 3166-1 alpha-2 country code accepted by Twilio, for example US. */
+  country: string;
+  /** Area code when the provider supports it for the selected inventory type. */
+  areaCode?: string;
 }
 
 export class TwilioClient {
   /**
-   * The API base and the credential sources are fixed, not injected. There is
-   * one Twilio deployment and one credential set this client can use, so
-   * passing either in would only create a way for a caller to be wrong. Tests
-   * exercise the client by stubbing `fetch` and the credential module.
-   */
-  private readonly baseUrl = TWILIO_API_BASE;
-  private readonly getLine = resolveLine;
-
-  /**
    * `POST /Messages.json`.
    *
-   * Twilio has no idempotency key on send. The `idempotencyKey` the seam
-   * passes is accepted and deliberately unused: honoring it would require
-   * client-side state that a restart loses, and pretending otherwise is worse
-   * than the honest gap. The transport layer already keys reply chunks off
-   * the message being answered, which bounds the double-send window to a
-   * retried turn.
+   * Twilio has no idempotency key on send. The idempotency key the transport
+   * passes is intentionally not forwarded because Twilio does not accept it.
    */
-  async sendMessage(to: string, body: string): Promise<string | undefined> {
-    const form = new URLSearchParams({ To: to, Body: body });
-    // From is resolved inside `request` (the line's from number) and added
-    // there, so every send carries the same line without each caller knowing it.
+  async sendMessage(
+    to: string,
+    body: string,
+    fromNumber: string,
+  ): Promise<string | undefined> {
+    const form = new URLSearchParams({ To: to, Body: body, From: fromNumber });
     const raw = await this.request("/Messages.json", {
       method: "POST",
       form,
     });
     return TwilioSendResponseSchema.safeParse(raw).data?.sid;
+  }
+
+  /** `GET /Messages.json`, newest first. */
+  async listMessages(limit: number): Promise<TwilioMessage[]> {
+    const form = new URLSearchParams({ PageSize: String(limit) });
+    const raw = await this.request("/Messages.json", { method: "GET", form });
+    const parsed = TwilioMessageListSchema.safeParse(raw);
+    return parsed.success ? parsed.data.messages : [];
   }
 
   /** `GET /IncomingPhoneNumbers.json`. */
@@ -108,17 +118,87 @@ export class TwilioClient {
   }
 
   /**
-   * `POST /IncomingPhoneNumbers/{Sid}.json` — set the number's SMS webhook.
+   * Search every number type Twilio exposes for this account and country.
    *
-   * The only write this plugin performs on the account besides sending. It
-   * runs on every webhook-mode start, so it is only called after a comparison
-   * (see the adapter) — a blind write would churn Twilio's audit log and
-   * briefly drop any webhook another process had just programmed.
+   * Twilio's country resource tells us whether Local, TollFree, and Mobile
+   * inventory is supported before we request it. Each query carries the
+   * documented `SmsEnabled=true` filter, then the caller still checks the
+   * returned capability flag before presenting a purchasable choice.
    */
+  async searchAvailablePhoneNumbers(
+    options: SearchAvailablePhoneNumbersOptions,
+  ): Promise<TwilioAvailablePhoneNumber[]> {
+    const country = options.country.trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) {
+      throw new Error("Twilio number search needs a two-letter country code, for example US.");
+    }
+
+    const countryResource = await this.request(
+      `/AvailablePhoneNumbers/${encodeURIComponent(country)}.json`,
+      { method: "GET", form: new URLSearchParams() },
+    );
+    const parsedCountry = TwilioAvailablePhoneNumberCountrySchema.safeParse(
+      countryResource,
+    );
+    const subresources = parsedCountry.success
+      ? parsedCountry.data.subresource_uris
+      : {};
+    const types = (Object.keys(subresources) as AvailablePhoneNumberType[])
+      .filter((type): type is AvailablePhoneNumberType =>
+        type === "local" || type === "toll_free" || type === "mobile",
+      );
+
+    const results = await Promise.all(
+      types.map(async (type) => {
+        const form = new URLSearchParams({
+          SmsEnabled: "true",
+          PageSize: String(AVAILABLE_NUMBER_PAGE_SIZE),
+        });
+        if (options.areaCode?.trim() && type !== "toll_free") {
+          form.set("AreaCode", options.areaCode.trim());
+        }
+
+        const resource =
+          type === "local"
+            ? "Local"
+            : type === "toll_free"
+              ? "TollFree"
+              : "Mobile";
+        const raw = await this.request(
+          `/AvailablePhoneNumbers/${encodeURIComponent(country)}/${resource}.json`,
+          { method: "GET", form },
+        );
+        const parsed = TwilioAvailablePhoneNumberListSchema.safeParse(raw);
+        return parsed.success ? parsed.data.available_phone_numbers : [];
+      }),
+    );
+
+    return results.flat();
+  }
+
+  /**
+   * `POST /IncomingPhoneNumbers.json` purchases a number in this Twilio
+   * account. Caller confirmation belongs above this client because this is a
+   * billable external action.
+   */
+  async purchasePhoneNumber(phoneNumber: string): Promise<TwilioIncomingPhoneNumber> {
+    const form = new URLSearchParams({ PhoneNumber: phoneNumber });
+    const raw = await this.request("/IncomingPhoneNumbers.json", {
+      method: "POST",
+      form,
+    });
+    const parsed = TwilioIncomingPhoneNumberResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error("Twilio purchased a number but returned an unreadable response.");
+    }
+    return parsed.data;
+  }
+
+  /** `POST /IncomingPhoneNumbers/{Sid}.json` sets the number's SMS webhook. */
   async setSmsWebhook(
     sid: string,
     url: string,
-    method: "POST",
+    method: "POST" = "POST",
   ): Promise<void> {
     const form = new URLSearchParams({
       SmsUrl: url,
@@ -130,31 +210,17 @@ export class TwilioClient {
     });
   }
 
-  /**
-   * One authenticated request, retrying 429s and 5xx with exponential backoff.
-   *
-   * `fetch` rejects rather than resolving for a transport failure — connection
-   * refused, DNS, TLS — and the reason is on `.cause`, not in the message. Left
-   * unwrapped it escapes as a bare `TypeError: fetch failed` with no mention
-   * of which request it was, which is how a provider being unreachable comes
-   * to look like a plugin bug.
-   */
+  /** One authenticated request, retrying 429s and 5xx with exponential backoff. */
   private async request(
     path: string,
     init: { method: string; form: URLSearchParams },
   ): Promise<unknown> {
-    const { accountSid, authToken, fromNumber } = await this.getLine();
+    const { accountSid, authToken } = await resolveTwilioCredentials();
     let lastError: TwilioApiError | undefined;
-
-    // The send needs the line; the listings do not. Adding it everywhere is
-    // harmless (Twilio ignores unknown form keys on GET) and keeps one path.
-    if (!init.form.has("From") && init.method === "POST" && path === "/Messages.json") {
-      init.form.set("From", fromNumber);
-    }
 
     const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
     let url = `${this.baseUrl}/${encodeURIComponent(accountSid)}${path}`;
-    if (init.method === "GET") {
+    if (init.method === "GET" && init.form.size > 0) {
       url = `${url}?${init.form.toString()}`;
     }
 
@@ -207,6 +273,8 @@ export class TwilioClient {
 
     throw lastError ?? new TwilioApiError("Twilio API request failed", 0);
   }
+
+  private readonly baseUrl = TWILIO_API_BASE;
 }
 
 function sleep(ms: number): Promise<void> {

@@ -18,7 +18,7 @@ const PROVIDER_CATALOG = {
     "Your own Twilio account and number. One auth token covers sending, receiving, and webhook signing.",
   credentialsGuide: {
     description:
-      "Sign in to the Twilio Console and copy the live Account SID and Auth Token from the dashboard, plus a number on the account that can send SMS. Trial accounts can only text numbers verified in the console.",
+      "Sign in to the Twilio Console and copy the live Account SID and Auth Token from the dashboard. Then ask the assistant to choose an existing SMS line or purchase one in your Twilio account. Trial accounts can only text numbers verified in the console.",
     url: "https://console.twilio.com",
     linkLabel: "Open Twilio Console",
   },
@@ -136,7 +136,13 @@ interface WebhookReport {
   at: string;
 }
 
+interface SMSConfig {
+  provider: "twilio";
+  fromNumber?: string;
+}
+
 interface Settings {
+  config: SMSConfig;
   activeProvider: string | null;
   credentials: Credentials;
   webhook: WebhookReport | null;
@@ -319,6 +325,14 @@ function App(): React.ReactElement {
           <div className="field">
             <label>Provider</label>
             <p className="note">{PROVIDER_CATALOG.subtitle}</p>
+          </div>
+
+          <div className="field">
+            <label>Assistant SMS number</label>
+            <p className="note">
+              {settings.config.fromNumber ??
+                "No assistant line selected. Finish SMS setup in chat to choose an existing Twilio number or purchase one."}
+            </p>
           </div>
 
           {fields.map((spec) => (

@@ -15,36 +15,35 @@ account. Twilio is the only provider.
 
 Say this before starting, because it is usually not what people picture:
 
-- The user creates their **own** Twilio account and buys or ports their own
-  number. There is no number provided for them.
-- People reach the assistant by texting **that number**, not the user's own
-  mobile number.
+- The user owns the **Twilio account** and the assistant's public SMS line.
+  Vellum does not supply a number or pay Twilio charges.
+- People reach the assistant by texting **that selected Twilio line**, not the
+  user's personal mobile number.
 - The assistant does **not** read the user's personal text messages or
-  history. Inbound arrives only on the Twilio line.
-- Twilio bills per message (roughly fractions of a cent in the US, more
-  elsewhere), plus the number's monthly fee. A2P registration may be required
-  for US traffic before carriers will deliver — see step 4.
+  history. Inbound arrives only on the selected Twilio line.
+- Twilio bills messages and numbers in the user's account. If setup needs to
+  buy a number, explain that it is billable and get explicit confirmation
+  immediately before the purchase.
 
-## 1. Get the credentials
+## 1. Get the Twilio credentials
 
-All three come from the Twilio Console
-(https://console.twilio.com):
+The only values the user needs from the Twilio Console
+(https://console.twilio.com) are:
 
 - **Account SID** — on the dashboard, starts with `AC`.
-- **Auth Token** — on the dashboard, next to the Account SID. The **live**
-  credentials, not the test pair: test credentials cannot send to real
-  numbers.
-- **From Number** — a number on the account that can send SMS. Buy one under
-  Phone Numbers if the account has none (a US number with SMS capability is
-  the straightforward choice).
+- **Auth Token** — next to the Account SID. Use the **live** credentials, not
+  the test pair: test credentials cannot send to real numbers.
 
-## 2. Store the credentials
+The assistant selects the public SMS number after these credentials are saved.
+Do not ask the user to find, paste, or type a Twilio phone number.
+
+## 2. Store the credentials securely
 
 **The assistant performs this step.** Do not tell the user to run a terminal
-command, send them to Settings, or ask them to paste any of these values into
-chat. Tell them what the next secure field is for, then invoke each command
-below through the bash tool. Each command blocks until the user submits or
-dismisses its secure prompt.
+command, send them to Settings, or ask them to paste either value into chat.
+Tell them what the next secure field is for, then invoke each command below
+through the bash tool. Each command blocks until the user submits or dismisses
+its secure prompt.
 
 Run the prompts one at a time, in this order:
 
@@ -64,38 +63,88 @@ assistant credentials prompt --service sms --field auth_token \
   --usage-description "Send and verify SMS messages through your Twilio account"
 ```
 
-```bash
-assistant credentials prompt --service sms --field from_number \
-  --label "Twilio SMS Number" \
-  --placeholder "+15551234567" \
-  --description "Paste the Twilio number with SMS capability that should send and receive assistant messages" \
-  --usage-description "Send and receive SMS messages through your Twilio account"
-```
-
 Exit code `0` means the value was stored. Exit code `130` means the user
 dismissed that prompt, which is a valid choice: ask whether to retry or stop.
 Any other non-zero exit is an error to investigate before continuing. Never
-put a secret in `config.json` and never paste one into chat. The plugin reads
-these values from the credential store at call time, so rotating one later
-needs no restart.
+put a secret in `config.json` and never paste one into chat.
 
-## 3. Inbound
+## 3. Select or purchase the assistant's SMS line
 
-The channel programs the number's SMS webhook itself on every start, so once
-the credentials are stored and the assistant is reachable (a public
-`ingress.publicBaseUrl` or a platform connection), inbound needs no manual
-step. A credential save is enough: the restart that follows it programs the
-number.
+Run this after both credential prompts succeed:
 
-If the assistant has no public URL, inbound SMS cannot arrive until a public
-ingress URL is available.
+```bash
+bun skills/sms-setup/scripts/twilio-numbers.ts list
+```
 
-The settings app reports the last registration attempt, including which step
-failed. "no webhook could be registered" with a URL reason means the
-assistant has no public address; a "not found on this Twilio account" reason
-means the from number does not match the account.
+Parse its JSON stdout. It only returns SMS-capable phone numbers owned by the
+user's Twilio account.
 
-## 4. A2P and carrier registration
+### Exactly one account number
+
+When `numbers.length === 1`, name that number and ask the user to confirm it
+as the assistant's public SMS line. Use a `ui_show` confirmation surface.
+Only after confirmation, run:
+
+```bash
+bun skills/sms-setup/scripts/twilio-numbers.ts use --phone-number <number>
+```
+
+### Multiple account numbers
+
+When `numbers.length > 1`, show a `ui_show` **single-select** `choice` surface.
+Each option's `id` is the E.164 `phoneNumber`; its title is the formatted
+number and its description includes `friendlyName` when present. Do not guess
+which line they mean. Once the user selects one, run:
+
+```bash
+bun skills/sms-setup/scripts/twilio-numbers.ts use --phone-number <selected-number>
+```
+
+### No account number
+
+When `numbers.length === 0`, ask the user for the two-letter country code to
+search. Use `US` without asking only if the user already established that they
+want a United States number. Optionally ask for an area code when they want one.
+Then run:
+
+```bash
+bun skills/sms-setup/scripts/twilio-numbers.ts search --country <country> [--area-code <area-code>]
+```
+
+Show returned candidates in a single-select `ui_show` `choice` surface. Include
+the number, locality/region when present, and any `addressRequirements` in the
+option description. Explain that the selected number will be **purchased in
+their Twilio account**, may require regulatory information, and incurs Twilio
+charges.
+
+A candidate selection is not purchase authorization. Show an explicit final
+`ui_show` confirmation naming the selected number and stating it is a billable
+Twilio purchase. Only after the user confirms that surface, run:
+
+```bash
+bun skills/sms-setup/scripts/twilio-numbers.ts purchase --phone-number <selected-number>
+```
+
+The `use` and `purchase` commands write the selected public line as
+`fromNumber` in this plugin's local `config.json`, never in the credential
+store. They also program the SMS webhook when the assistant has a public URL.
+Parse the JSON result and report the saved `fromNumber` plus its webhook
+outcome. A `skipped` webhook outcome means the assistant has no public ingress
+URL yet; a `failed` outcome needs investigation before inbound messages will
+arrive.
+
+## 4. Inbound
+
+The channel programs the selected number's SMS webhook during setup and on
+startup. If the assistant has no public URL, inbound SMS cannot arrive until a
+public ingress URL is available.
+
+The settings app reports the saved **Assistant SMS number** and the last
+registration attempt. "no webhook could be registered" with a URL reason means
+the assistant has no public address; a "not found on this Twilio account"
+reason means the configured line no longer belongs to the account.
+
+## 5. A2P and carrier registration
 
 US carriers require A2P 10DLC registration for traffic from Twilio numbers,
 and unregistered traffic is filtered. If the user's messages are not being
@@ -104,7 +153,7 @@ before debugging the plugin: the send will succeed from Twilio's side and
 silently fail at the carrier. A trial account can only text verified numbers
 added to the console — that restriction lifts on upgrade.
 
-## 5. Save and verify the user's SMS handle
+## 6. Save and verify the user's SMS handle
 
 Inbound from a handle that is not a verified identity on the guardian is
 classified unknown and denied under the default plugin floor. A number that
@@ -143,9 +192,9 @@ and tell the user to reply **STOP** unwanted-sender style or text the line
 from their phone so verification can complete the next time they message the
 assistant — the verified state is what admits them past the floor.
 
-## 6. Confirm
+## 7. Confirm
 
 Have the user text the line. The turn runs, the reply arrives on their phone,
 and the settings app's inbound report confirms the delivery. If nothing
 arrives: the number's webhook (Twilio Console, Phone Numbers, the number,
-Messaging), the assistant's public URL, and step 4's A2P note, in that order.
+Messaging), the assistant's public URL, and step 5's A2P note, in that order.

@@ -16,15 +16,20 @@ threads. Inbound arrives only on the configured Twilio line.
 ## Getting started
 
 1. Create or sign in to a [Twilio account](https://www.twilio.com).
-2. Buy or choose an SMS-capable Twilio number.
-3. Find the Account SID, Auth Token, and that number in the Twilio Console.
-4. Ask the assistant to set up SMS. It opens a masked credential prompt for
-each value and stores it securely. Do not paste the values into chat or run a
-terminal command yourself.
+2. Find the live Account SID and Auth Token in the Twilio Console.
+3. Ask the assistant to set up SMS. It securely collects those two credentials,
+   checks the SMS-capable phone numbers already owned by the Twilio account,
+   and helps choose one for the assistant.
+4. If the account has no SMS-capable number, the assistant can search Twilio's
+   available inventory for a country and present choices. It asks for explicit
+   confirmation before purchasing the selected number in that Twilio account.
 
-When the assistant has a public ingress URL, the plugin programs the number's
-SMS webhook automatically. If there is no public ingress URL, inbound SMS
-cannot arrive until one is available.
+The Twilio account, number ownership, and billing remain with the user. Do not
+paste credentials into chat or run a terminal command yourself.
+
+When the assistant has a public ingress URL, the plugin programs the selected
+number's SMS webhook automatically. If there is no public ingress URL, inbound
+SMS cannot arrive until one is available.
 
 For Twilio's account, number, and messaging setup, see [Send SMS and MMS
 messages](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages).

@@ -5,6 +5,7 @@
  * same setup path as a fresh boot.
  */
 
+import { readConfigView } from "./app-settings.ts";
 import { buildChannelProvider } from "./channel/provider.ts";
 import type { SMSConfig } from "./config.ts";
 import { describeError } from "./providers/error-detail.ts";
@@ -21,7 +22,7 @@ import {
   type RuntimeContext,
   type WebhookRegistrationStep,
 } from "./plugin-state.ts";
-import { pluginName } from "./plugin-paths.ts";
+import { pluginConfigPath, pluginName } from "./plugin-paths.ts";
 import { resolveWebhookEndpoint } from "./webhook-endpoint.ts";
 import { describeWebhookFailure } from "./webhook-report.ts";
 
@@ -129,7 +130,10 @@ export async function startChannelRuntime(
 
   let provider: MessagingProvider;
   try {
-    provider = resolveProvider({ config });
+    provider = resolveProvider({
+      config,
+      getFromNumber: () => readConfigView(pluginConfigPath()).fromNumber,
+    });
   } catch (err) {
     const idleReason = err instanceof Error ? err.message : String(err);
     ctx.logger.warn(
