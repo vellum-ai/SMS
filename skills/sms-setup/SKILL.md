@@ -40,21 +40,44 @@ All three come from the Twilio Console
 
 ## 2. Store the credentials
 
-The settings app is the shortest path: open the SMS plugin's settings and fill
-in the three fields. It stores them in the credential store and restarts the
-channel — which is also what programs the number's webhook (step 3).
+**The assistant performs this step.** Do not tell the user to run a terminal
+command, send them to Settings, or ask them to paste any of these values into
+chat. Tell them what the next secure field is for, then invoke each command
+below through the bash tool. Each command blocks until the user submits or
+dismisses its secure prompt.
 
-Or from a terminal:
+Run the prompts one at a time, in this order:
 
 ```bash
-assistant credentials set --service sms --field account_sid <sid>
-assistant credentials set --service sms --field auth_token <token>
-assistant credentials set --service sms --field from_number <number>
+assistant credentials prompt --service sms --field account_sid \
+  --label "Twilio Account SID" \
+  --placeholder "AC..." \
+  --description "Paste the live Account SID from your Twilio Console dashboard" \
+  --usage-description "Connect your Twilio account to the SMS channel"
 ```
 
-Never put a secret in `config.json` and never paste one into chat. The plugin
-reads them from the credential store at call time, so rotating one later needs
-no restart.
+```bash
+assistant credentials prompt --service sms --field auth_token \
+  --label "Twilio Auth Token" \
+  --placeholder "Twilio Auth Token" \
+  --description "Paste the live Auth Token shown next to your Account SID in the Twilio Console" \
+  --usage-description "Send and verify SMS messages through your Twilio account"
+```
+
+```bash
+assistant credentials prompt --service sms --field from_number \
+  --label "Twilio SMS Number" \
+  --placeholder "+15551234567" \
+  --description "Paste the Twilio number with SMS capability that should send and receive assistant messages" \
+  --usage-description "Send and receive SMS messages through your Twilio account"
+```
+
+Exit code `0` means the value was stored. Exit code `130` means the user
+dismissed that prompt, which is a valid choice: ask whether to retry or stop.
+Any other non-zero exit is an error to investigate before continuing. Never
+put a secret in `config.json` and never paste one into chat. The plugin reads
+these values from the credential store at call time, so rotating one later
+needs no restart.
 
 ## 3. Inbound
 
