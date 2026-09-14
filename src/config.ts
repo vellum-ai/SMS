@@ -1,10 +1,10 @@
 /**
  * Plugin configuration and credential resolution.
  *
- * No secret is a config field, and no credential name is configurable: the
- * provider resolves from the fixed set of fields declared in
- * `PROVIDER_CREDENTIALS`, so secrets live in the credential store rather than
- * as plaintext in `config.json`.
+ * The Twilio Account SID and Auth Token are vault credentials. The assistant's
+ * SMS line is a non-secret, user-owned setting in this plugin's config.json.
+ * Keeping the line in config lets setup select it from the authenticated
+ * Twilio account without treating a public phone number as a secret.
  */
 
 import { resolveCredential } from "@vellumai/plugin-api";
@@ -25,7 +25,7 @@ export interface CredentialField {
   secret: boolean;
 }
 
-/** What the provider needs stored before it can do anything. */
+/** What the provider needs stored before it can make authenticated API calls. */
 export const PROVIDER_CREDENTIALS: Record<
   ProviderId,
   readonly CredentialField[]
@@ -43,12 +43,6 @@ export const PROVIDER_CREDENTIALS: Record<
       placeholder: "Enter your Twilio auth token",
       secret: true,
     },
-    {
-      field: "from_number",
-      label: "From Number",
-      placeholder: "Enter the number to send from, e.g. +15551234567",
-      secret: false,
-    },
   ],
 };
 
@@ -60,11 +54,18 @@ export const WEBHOOK_SECRET_FIELDS: Record<ProviderId, string> = {
   twilio: "auth_token",
 };
 
+const E164_NUMBER = /^\+[1-9]\d{6,14}$/;
+
 export const SMSConfigSchema = z.object({
   provider: z
     .enum(PROVIDER_IDS)
     .default("twilio")
     .describe("Which provider backs the line. Twilio is the only implementation."),
+  fromNumber: z
+    .string()
+    .regex(E164_NUMBER, "must be an E.164 phone number, for example +15551234567")
+    .optional()
+    .describe("The Twilio SMS line the assistant sends and receives on."),
 });
 
 export type SMSConfig = z.infer<typeof SMSConfigSchema>;
@@ -115,8 +116,4 @@ export async function resolveAccountSid(): Promise<string> {
 
 export async function resolveAuthToken(): Promise<string> {
   return resolveCredentialField("auth_token", "The Twilio auth token");
-}
-
-export async function resolveFromNumber(): Promise<string> {
-  return resolveCredentialField("from_number", "The from number");
 }

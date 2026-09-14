@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { CHANNEL_ID } from "../plugin-paths.ts";
+
 import {
   chatTypeForMessage,
   classifyTwilioWebhook,
@@ -35,7 +37,7 @@ describe("normalizeWebhookParams", () => {
   test("maps a messaging delivery onto the event shape", () => {
     const event = normalizeWebhookParams(messageDelivery(), RECEIVED_AT);
     expect(event).toBeDefined();
-    expect(event?.sourceChannel).toBe("sms");
+    expect(event?.sourceChannel).toBe(CHANNEL_ID);
     expect(event?.message.content).toBe("hello there");
     expect(event?.message.externalMessageId).toBe("SM01");
     expect(event?.actor.actorExternalId).toBe("+15551234567");

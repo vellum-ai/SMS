@@ -7,8 +7,18 @@ import {
 } from "../config.ts";
 
 describe("SMSConfigSchema", () => {
-  test("defaults to Twilio", () => {
+  test("defaults to Twilio without selecting a line", () => {
     expect(SMSConfigSchema.parse({})).toEqual({ provider: "twilio" });
+  });
+
+  test("accepts a selected E.164 assistant line", () => {
+    expect(
+      SMSConfigSchema.parse({ fromNumber: "+15559998888" }),
+    ).toEqual({ provider: "twilio", fromNumber: "+15559998888" });
+  });
+
+  test("rejects a non-E.164 assistant line", () => {
+    expect(() => SMSConfigSchema.parse({ fromNumber: "555-999-8888" })).toThrow();
   });
 
   test("strips retired polling configuration", () => {
@@ -24,8 +34,11 @@ describe("SMSConfigSchema", () => {
 
 describe("resolveConfig", () => {
   test("passes a valid config through without warnings", () => {
-    const { config, warnings } = resolveConfig({ provider: "twilio" });
-    expect(config).toEqual({ provider: "twilio" });
+    const { config, warnings } = resolveConfig({
+      provider: "twilio",
+      fromNumber: "+15559998888",
+    });
+    expect(config).toEqual({ provider: "twilio", fromNumber: "+15559998888" });
     expect(warnings).toEqual([]);
   });
 
@@ -41,11 +54,10 @@ describe("resolveConfig", () => {
 });
 
 describe("credential fields", () => {
-  test("Twilio's fields cover the three console values", () => {
+  test("Twilio keeps account credentials in the vault, not the selected line", () => {
     expect(PROVIDER_CREDENTIALS.twilio.map((field) => field.field)).toEqual([
       "account_sid",
       "auth_token",
-      "from_number",
     ]);
   });
 

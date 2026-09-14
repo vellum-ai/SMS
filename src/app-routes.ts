@@ -42,7 +42,7 @@ export async function handleSettingsGet(): Promise<Response> {
 
 /**
  * `POST /x/plugins/sms/credentials`: store Twilio credentials and program the
- * configured number's webhook before reporting success.
+ * selected number's webhook when setup has already selected one.
  */
 export async function handleCredentialsPost(
   request: Request,
@@ -76,8 +76,10 @@ export async function handleCredentialsPost(
   }
 
   const config = readConfigView(pluginConfigPath());
+  // Account credentials are collected before SMS setup chooses an assistant
+  // line. That is a valid partial setup state, not a failed credential save.
   const result =
-    config.provider === parsed.data.provider
+    config.provider === parsed.data.provider && config.fromNumber
       ? await startChannelRuntime(config, { waitForSetup: true })
       : undefined;
 

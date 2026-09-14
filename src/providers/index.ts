@@ -19,6 +19,11 @@ import type { SMSConfig } from "../config.ts";
 
 export interface ResolveProviderOptions {
   config: SMSConfig;
+  /**
+   * Optional live line reader for the long-running channel transport. Route
+   * handlers pass only config and remain deterministic for their request.
+   */
+  getFromNumber?: () => string | undefined;
 }
 
 export function resolveProvider(
@@ -26,7 +31,9 @@ export function resolveProvider(
 ): MessagingProvider {
   switch (opts.config.provider) {
     case "twilio":
-      return createTwilioProvider();
+      return createTwilioProvider(
+        opts.getFromNumber ?? (() => opts.config.fromNumber),
+      );
     default:
       // Unreachable through the config schema, which validates against
       // `PROVIDER_IDS`. Reachable if a caller hands over a config it built
